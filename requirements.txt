@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+fake-useragent
+markdown
+jinja2
+schedule
+google-generativeai
