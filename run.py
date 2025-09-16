@@ -94,31 +94,27 @@ class GoogleNewsScraper:
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # === PERBAIKAN SCRAPER DIMULAI DI SINI ===
             found_new_article = False
             for link_element in soup.select('a[href^="/url?q="]'):
                 if len(articles) >= max_articles:
                     break
 
-                # Cari elemen 'heading' di dalam tautan, ini ciri utama artikel berita
                 heading = link_element.find('div', role='heading')
                 if not heading:
                     continue
 
                 try:
-                    # Ekstrak dan bersihkan URL dari parameter Google
                     raw_url = link_element['href']
                     if '/url?q=' in raw_url:
                         url = unquote(raw_url.split('/url?q=')[1].split('&sa=U')[0])
                     else:
-                        continue # Lewati jika format tidak terduga
+                        continue
                         
                     if url in seen_urls:
                         continue
 
                     title = heading.get_text()
                     
-                    # Cari elemen induk yang membungkus semua info (judul, snippet, tanggal)
                     article_container = link_element.find_parent('div', class_=lambda c: c and c.startswith('SoaBEf')) or link_element.find_parent('div', class_='Gx5Zad') or link_element.find_parent('div')
                     
                     snippet_div = article_container.find('div', class_='n0jPhd') if article_container else None
@@ -145,11 +141,9 @@ class GoogleNewsScraper:
                     self.logger.warning(f"Could not parse an article element: {e}")
                     continue
             
-            # Jika tidak ada artikel baru ditemukan di halaman ini, hentikan pencarian
             if not found_new_article:
                 self.logger.info("No new articles found on this page. Ending scrape for this keyword.")
                 break
-            # === PERBAIKAN SCRAPER BERAKHIR DI SINI ===
             
             page += 1
             time.sleep(random.uniform(1, 3))
@@ -190,7 +184,6 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
     try:
         logging.info(f"Rewriting article: {article['title'][:50]}...")
         response = model.generate_content(prompt)
-        # Tambahkan pembersihan dasar dari Markdown yang mungkin dihasilkan Gemini
         clean_text = response.text.replace('*', '').replace('#', '')
         article['rewritten_content'] = clean_text
         return article
@@ -199,8 +192,15 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
         return None
 
 def generate_static_site(articles: List[Dict], output_dir: str):
-    if not articles:
-        logging.warning("No articles available to generate the site.")
+    if not articles and not Path(output_dir, 'index.html').exists():
+         # Jika tidak ada artikel dan index.html belum ada, buat file kosong
+         # untuk mencegah 404 pada deployment pertama kali.
+        logging.warning("No articles found, creating an empty index.html for initial deployment.")
+        Path(output_dir, 'index.html').touch()
+        return
+    elif not articles:
+        # Jika tidak ada artikel tapi index.html sudah ada, tidak perlu melakukan apa-apa.
+        logging.warning("No new articles found, existing index.html will be kept.")
         return
 
     try:
@@ -243,6 +243,8 @@ def main():
     config = load_config()
     keywords = config.get('keywords', [])
     max_articles_per_keyword = config.get('max_articles_per_keyword', 5)
+    # <-- BARU: Baca konfigurasi jeda, default 2 detik jika tidak ada di config
+    gemini_delay = config.get('gemini_api_delay_seconds', 2)
     output_dir = '.'
 
     if not keywords:
@@ -261,13 +263,9 @@ def main():
         articles = scraper.scrape_articles(keyword, max_articles=max_articles_per_keyword)
         all_articles_raw.extend(articles)
     
-    # Hanya lanjutkan jika kita berhasil mendapatkan setidaknya satu artikel
     if not all_articles_raw:
         logging.warning("Scraping resulted in 0 articles. No content to process or deploy. Exiting.")
-        # Kita membuat file kosong agar commit tetap berjalan jika ini adalah run pertama
-        # Ini mencegah 404 pada deployment awal.
-        if not Path('index.html').exists():
-            generate_static_site([], output_dir)
+        generate_static_site([], output_dir)
         return
 
     rewritten_articles = []
@@ -275,7 +273,10 @@ def main():
         rewritten_article = rewrite_with_gemini(article, GEMINI_API_KEY)
         if rewritten_article:
             rewritten_articles.append(rewritten_article)
-        time.sleep(1)
+        
+        # <-- DIUBAH: Gunakan jeda dari konfigurasi
+        logging.info(f"Waiting for {gemini_delay} seconds before next API call...")
+        time.sleep(gemini_delay)
 
     json_file = Path(output_dir) / "data.json"
     scraper.save_to_json(rewritten_articles, str(json_file))
