@@ -93,7 +93,7 @@ class GoogleNewsScraper:
                 break
             
             soup = BeautifulSoup(response.text, 'html.parser')
-            result_containers = soup.find_all('div', class_='SoaBEf')
+            result_containers = soup.find_all('div', class_='Gx5Zad')
             
             if not result_containers:
                 self.logger.info("No more results found.")
