@@ -6,5 +6,6 @@
     "ekonomi digital asia tenggara",
     "penemuan sains terbaru"
   ],
-  "max_articles_per_keyword": 3
+  "max_articles_per_keyword": 3,
+  "gemini_api_delay_seconds": 5
 }
