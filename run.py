@@ -8,7 +8,7 @@ import re
 import sys
 import os
 from datetime import datetime
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -72,14 +72,14 @@ class GoogleNewsScraper:
     def parse_article_date(self, date_str: str) -> Optional[str]:
         if not date_str:
             return None
-        return date_str # Keep it simple, as parsing can be complex
+        return date_str
     
     def scrape_articles(self, keyword: str, max_articles: int = 10) -> List[Dict]:
         articles = []
         seen_urls = set()
         page = 0
         
-        self.logger.info(f"Starting scrape for keyword: {keyword}")
+        self.logger.info(f"Starting scrape for keyword: '{keyword}'")
         
         while len(articles) < max_articles:
             start = page * 10
@@ -93,32 +93,40 @@ class GoogleNewsScraper:
                 break
             
             soup = BeautifulSoup(response.text, 'html.parser')
-            result_containers = soup.find_all('div', class_='Gx5Zad')
             
-            if not result_containers:
-                self.logger.info("No more results found.")
-                break
-            
-            for container in result_containers:
+            # === PERBAIKAN SCRAPER DIMULAI DI SINI ===
+            found_new_article = False
+            for link_element in soup.select('a[href^="/url?q="]'):
                 if len(articles) >= max_articles:
                     break
-                
+
+                # Cari elemen 'heading' di dalam tautan, ini ciri utama artikel berita
+                heading = link_element.find('div', role='heading')
+                if not heading:
+                    continue
+
                 try:
-                    link_element = container.find('a')
-                    if not link_element: continue
+                    # Ekstrak dan bersihkan URL dari parameter Google
+                    raw_url = link_element['href']
+                    if '/url?q=' in raw_url:
+                        url = unquote(raw_url.split('/url?q=')[1].split('&sa=U')[0])
+                    else:
+                        continue # Lewati jika format tidak terduga
+                        
+                    if url in seen_urls:
+                        continue
+
+                    title = heading.get_text()
                     
-                    url = link_element.get('href')
-                    if not url or url in seen_urls: continue
+                    # Cari elemen induk yang membungkus semua info (judul, snippet, tanggal)
+                    article_container = link_element.find_parent('div', class_=lambda c: c and c.startswith('SoaBEf')) or link_element.find_parent('div', class_='Gx5Zad') or link_element.find_parent('div')
                     
-                    title_div = link_element.find('div', role='heading')
-                    title = title_div.get_text() if title_div else ''
-                    
-                    snippet_div = container.find('div', class_='n0jPhd')
-                    snippet = snippet_div.get_text() if snippet_div else ''
-                    
-                    date_span = container.find('span', class_='OSrXXb')
+                    snippet_div = article_container.find('div', class_='n0jPhd') if article_container else None
+                    snippet = snippet_div.get_text(separator=' ', strip=True) if snippet_div else ''
+
+                    date_span = article_container.find('span', class_='OSrXXb') if article_container else None
                     date_published = self.parse_article_date(date_span.get_text() if date_span else '')
-                    
+
                     article_data = {
                         'keyword': keyword,
                         'url': url,
@@ -130,16 +138,23 @@ class GoogleNewsScraper:
                     
                     articles.append(article_data)
                     seen_urls.add(url)
+                    found_new_article = True
                     self.logger.debug(f"Scraped article: {title[:50]}...")
-                    
+
                 except Exception as e:
-                    self.logger.error(f"Error parsing article: {e}")
+                    self.logger.warning(f"Could not parse an article element: {e}")
                     continue
+            
+            # Jika tidak ada artikel baru ditemukan di halaman ini, hentikan pencarian
+            if not found_new_article:
+                self.logger.info("No new articles found on this page. Ending scrape for this keyword.")
+                break
+            # === PERBAIKAN SCRAPER BERAKHIR DI SINI ===
             
             page += 1
             time.sleep(random.uniform(1, 3))
         
-        self.logger.info(f"Scraped {len(articles)} articles for '{keyword}'")
+        self.logger.info(f"Finished scrape for '{keyword}'. Found {len(articles)} articles.")
         return articles
     
     def save_to_json(self, articles: List[Dict], filename: str):
@@ -159,7 +174,6 @@ class GoogleNewsScraper:
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
-    """Minta Gemini untuk menulis ulang artikel berdasarkan judul dan snippet."""
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-pro')
     
@@ -176,16 +190,17 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
     try:
         logging.info(f"Rewriting article: {article['title'][:50]}...")
         response = model.generate_content(prompt)
-        article['rewritten_content'] = response.text
+        # Tambahkan pembersihan dasar dari Markdown yang mungkin dihasilkan Gemini
+        clean_text = response.text.replace('*', '').replace('#', '')
+        article['rewritten_content'] = clean_text
         return article
     except Exception as e:
         logging.error(f"Failed to call Gemini API: {e}")
         return None
 
 def generate_static_site(articles: List[Dict], output_dir: str):
-    """Membuat file index.html dari daftar artikel menggunakan template Jinja2."""
     if not articles:
-        logging.warning("No articles to generate site.")
+        logging.warning("No articles available to generate the site.")
         return
 
     try:
@@ -207,7 +222,6 @@ def generate_static_site(articles: List[Dict], output_dir: str):
         logging.error(f"Failed to generate static site: {e}")
 
 def load_config(config_file: str = 'config.json') -> Dict:
-    """Memuat konfigurasi dari file JSON."""
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -229,7 +243,7 @@ def main():
     config = load_config()
     keywords = config.get('keywords', [])
     max_articles_per_keyword = config.get('max_articles_per_keyword', 5)
-    output_dir = '.' # Output di direktori root proyek
+    output_dir = '.'
 
     if not keywords:
         logging.error("No keywords found in config.json. Exiting.")
@@ -246,13 +260,22 @@ def main():
     for keyword in keywords:
         articles = scraper.scrape_articles(keyword, max_articles=max_articles_per_keyword)
         all_articles_raw.extend(articles)
+    
+    # Hanya lanjutkan jika kita berhasil mendapatkan setidaknya satu artikel
+    if not all_articles_raw:
+        logging.warning("Scraping resulted in 0 articles. No content to process or deploy. Exiting.")
+        # Kita membuat file kosong agar commit tetap berjalan jika ini adalah run pertama
+        # Ini mencegah 404 pada deployment awal.
+        if not Path('index.html').exists():
+            generate_static_site([], output_dir)
+        return
 
     rewritten_articles = []
     for article in all_articles_raw:
         rewritten_article = rewrite_with_gemini(article, GEMINI_API_KEY)
         if rewritten_article:
             rewritten_articles.append(rewritten_article)
-        time.sleep(1) # Jeda 1 detik antar panggilan API untuk menghindari rate limit
+        time.sleep(1)
 
     json_file = Path(output_dir) / "data.json"
     scraper.save_to_json(rewritten_articles, str(json_file))
