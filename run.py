@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr.bin/env python3
 
 import json
 import logging
@@ -7,7 +7,7 @@ import random
 import sys
 import os
 from datetime import datetime
-from urllib.parse import urljoin, quote
+from urllib.parse import urljoin
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -18,50 +18,57 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (DIUPGRADE UNTUK MENGGUNAKAN SCRAPERAPI)
+# BAGIAN 1: KELAS SCRAPER
 # ===================================================================
 
 class GoogleNewsScraper:
-    def __init__(self, scraperapi_key: str, verbose=False):
+    def __init__(self, verbose=False):
         self.ua = UserAgent()
         self.base_url = "https://news.google.com"
-        # ================================================================
-        # === UPGRADE UTAMA ADA DI SINI ===
-        # Kita menyimpan kunci ScraperAPI dan membuat URL targetnya.
-        # ================================================================
-        self.scraperapi_key = scraperapi_key
-        
         logging_level = logging.DEBUG if verbose else logging.INFO
         logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
+        self.session = requests.Session()
+    
+    def _initialize_session(self, hl_code: str):
+        cookies = {'CONSENT': 'YES+cb.20240101-01-p0.en+FX+000'}
+        
+        headers = {
+            'User-Agent': self.ua.random,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': f'{hl_code.lower()}-{hl_code.upper()},{hl_code.lower()};q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        self.session.headers.update(headers)
+        self.session.cookies.update(cookies)
     
     def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
-        # URL target sekarang adalah endpoint ScraperAPI, dengan URL asli kita sebagai parameter
-        encoded_url = quote(url)
-        scraperapi_url = f'http://api.scraperapi.com?api_key={self.scraperapi_key}&url={encoded_url}'
-        
         for attempt in range(max_retries):
+            # ================================================================
+            # === KESALAHAN ADA DI BARIS INI, SEKARANG SUDAH DIPERBAIKI ===
             try:
-                self.logger.debug(f"Request attempt {attempt + 1} via ScraperAPI for {url}")
-                # Kita tidak perlu lagi mengatur headers atau cookies, ScraperAPI yang menanganinya
-                response = requests.get(scraperapi_url, timeout=60) # Timeout lebih lama untuk layanan pihak ketiga
-                
+            # ================================================================
+                self.logger.debug(f"Request attempt {attempt + 1} using session for {url}")
+                response = self.session.get(url, timeout=30, allow_redirects=True)
                 if response.status_code == 200:
                     return response
-                
-                self.logger.error(f"ScraperAPI returned HTTP Error {response.status_code}. Response: {response.text}")
+                self.logger.error(f"HTTP Error {response.status_code} for {url}")
             except requests.RequestException as e:
                 self.logger.error(f"Request failed: {e}")
-            time.sleep(random.uniform(2, 5))
+            time.sleep(random.uniform(1, 3))
             
-        self.logger.error(f"Failed to fetch {url} via ScraperAPI after {max_retries} attempts")
+        self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
         return None
     
-    def scrape_category(self, category_name: str, topic_id: str, max_articles: int) -> List[Dict]:
+    def scrape_category(self, category_name: str, topic_id: str, max_articles: int, gl_code: str, hl_code: str) -> List[Dict]:
         articles = []
         seen_urls = set()
-        topic_url = f"{self.base_url}/topics/{topic_id}?hl=id&gl=ID"
-        self.logger.info(f"Starting scrape for category: '{category_name}'")
+        topic_url = f"{self.base_url}/topics/{topic_id}?hl={hl_code}&gl={gl_code}"
+        
+        self.logger.info(f"Starting scrape for category: '{category_name}' from {topic_url}")
         
         response = self.make_request(topic_url)
         if not response:
@@ -106,7 +113,7 @@ class GoogleNewsScraper:
         return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER (TIDAK ADA PERUBAHAN)
+# BAGIAN 2: FUNGSI-FUNGSI HELPER
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
@@ -114,12 +121,12 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
     model = genai.GenerativeModel('gemini-pro')
     
     prompt = f"""
-    Anda adalah seorang jurnalis AI yang handal. Berdasarkan judul berita berikut, tuliskan sebuah ringkasan berita singkat (1-2 paragraf) yang berkualitas, unik, dan informatif. 
-    Bayangkan poin-poin utama yang mungkin dibahas dalam artikel tersebut dan rangkai menjadi narasi yang koheren dan netral.
+    You are an expert AI journalist. Based on the following news headline, write a brief, high-quality, unique, and informative news summary (1-2 paragraphs).
+    Imagine the key points that the article would likely cover and weave them into a coherent and neutral narrative.
     
-    Judul Berita: "{article['title']}"
+    Headline: "{article['title']}"
 
-    Ringkasan Berita:
+    News Summary:
     """
     
     try:
@@ -130,7 +137,7 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
         return article
     except Exception as e:
         logging.error(f"Failed to call Gemini API: {e}")
-        article['rewritten_content'] = "Konten tidak dapat dibuat saat ini."
+        article['rewritten_content'] = "Content could not be generated at this time."
         return article
 
 def generate_static_site(articles_by_category: List[Dict], output_dir: str):
@@ -164,13 +171,25 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA (DISESUAIKAN UNTUK MENGAMBIL SCRAPERAPI_KEY)
+# BAGIAN 3: FUNGSI UTAMA
 # ===================================================================
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     config = load_config()
+    
+    region_config = config.get('target_region')
+    if not region_config:
+        logging.error("'target_region' not found in config.json. Exiting.")
+        sys.exit(1)
+        
+    region_name = region_config.get('name', 'Unknown')
+    gl_code = region_config.get('gl', 'US')
+    hl_code = region_config.get('hl', 'en')
+
+    logging.info(f"--- Starting News Aggregator for region: {region_name} (gl={gl_code}, hl={hl_code}) ---")
+    
     categories = config.get('categories', [])
     posts_per_category = config.get('posts_per_category', 5)
     gemini_delay = config.get('gemini_api_delay_seconds', 2)
@@ -180,13 +199,9 @@ def main():
     if not GEMINI_API_KEY:
         logging.error("GEMINI_API_KEY environment variable is not set! Exiting.")
         sys.exit(1)
-        
-    SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY")
-    if not SCRAPERAPI_KEY:
-        logging.error("SCRAPERAPI_KEY environment variable is not set! Exiting.")
-        sys.exit(1)
 
-    scraper = GoogleNewsScraper(scraperapi_key=SCRAPERAPI_KEY, verbose=True)
+    scraper = GoogleNewsScraper(verbose=True)
+    scraper._initialize_session(hl_code=hl_code)
     
     articles_for_template = []
     total_articles_scraped = 0
@@ -199,7 +214,7 @@ def main():
             logging.warning(f"Skipping invalid category entry: {category}")
             continue
             
-        scraped_articles = scraper.scrape_category(category_name, topic_id, posts_per_category)
+        scraped_articles = scraper.scrape_category(category_name, topic_id, posts_per_category, gl_code, hl_code)
         if not scraped_articles:
             continue
         
