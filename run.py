@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER
+# BAGIAN 1: KELAS SCRAPER (DENGAN UPGRADE KE SESSION & COOKIES)
 # ===================================================================
 
 class GoogleNewsScraper:
@@ -29,12 +29,19 @@ class GoogleNewsScraper:
         logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
         
-    def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
         # ================================================================
-        # === PERBAIKAN PENTING ADA DI SINI ===
-        # Kita kembalikan headers yang lengkap untuk meniru browser sungguhan
-        # Ini akan menyelesaikan masalah HTTP Error 400.
+        # === UPGRADE UTAMA ADA DI SINI ===
+        # Kita menggunakan requests.Session untuk mengelola cookies dan headers
+        # di semua permintaan, meniru perilaku browser.
         # ================================================================
+        self.session = requests.Session()
+        self._initialize_session()
+
+    def _initialize_session(self):
+        """Menetapkan headers dan cookie persetujuan awal untuk sesi."""
+        # Cookie persetujuan ini sangat penting untuk menghindari error 400 dari Google News
+        cookies = {'CONSENT': 'YES+cb.20240101-01-p0.en+FX+000'}
+        
         headers = {
             'User-Agent': self.ua.random,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -44,11 +51,15 @@ class GoogleNewsScraper:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
-        
+        self.session.headers.update(headers)
+        self.session.cookies.update(cookies)
+    
+    def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
         for attempt in range(max_retries):
             try:
-                self.logger.debug(f"Request attempt {attempt + 1} with full headers for {url}")
-                response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+                self.logger.debug(f"Request attempt {attempt + 1} using session for {url}")
+                # Menggunakan self.session.get alih-alih requests.get
+                response = self.session.get(url, timeout=30, allow_redirects=True)
                 if response.status_code == 200:
                     return response
                 self.logger.error(f"HTTP Error {response.status_code} for {url}")
@@ -108,7 +119,7 @@ class GoogleNewsScraper:
         return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER
+# BAGIAN 2: FUNGSI-FUNGSI HELPER (TIDAK ADA PERUBAHAN)
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
@@ -166,7 +177,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA
+# BAGIAN 3: FUNGSI UTAMA (TIDAK ADA PERUBAHAN)
 # ===================================================================
 
 def main():
