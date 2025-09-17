@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Berita Otomatis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-text: #212529;
+            --secondary-text: #6c757d;
+            --background-color: #f8f9fa;
+            --card-background: #ffffff;
+            --border-color: #dee2e6;
+            --accent-color: #0056b3;
+            --shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            background-color: var(--background-color);
+            color: var(--primary-text);
+            line-height: 1.7;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px 15px;
+        }
+        .site-header {
+            text-align: center;
+            padding-bottom: 2rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .site-header h1 {
+            font-family: 'Merriweather', serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .site-header p {
+            font-size: 1rem;
+            color: var(--secondary-text);
+            margin-top: 0;
+        }
+        .category-section {
+            margin-bottom: 3rem;
+        }
+        .category-title {
+            font-family: 'Merriweather', serif;
+            font-size: 2rem;
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .articles-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+        .article-card {
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .article-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.08);
+        }
+        .card-content {
+            padding: 1.5rem;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .card-title {
+            font-family: 'Merriweather', serif;
+            font-size: 1.25rem;
+            margin: 0 0 1rem 0;
+            color: var(--primary-text);
+        }
+        .card-summary {
+            font-size: 0.95rem;
+            color: #495057;
+            flex-grow: 1;
+            margin-bottom: 1.5rem;
+        }
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--secondary-text);
+        }
+        .read-more-link {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color 0.2s ease;
+        }
+        .read-more-link:hover {
+            background-color: #004494;
+        }
+        .site-footer {
+            text-align: center;
+            padding: 2rem 0;
+            margin-top: 2rem;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            color: var(--secondary-text);
+        }
+        @media (min-width: 768px) {
+            .articles-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header class="site-header">
+            <h1>Portal Berita Otomatis</h1>
+            <p>Ringkasan Berita Terbaru dari Berbagai Kategori, Diperbarui pada 17 September 2025, 03:28:49 UTC</p>
+        </header>
+
+        <main>
+            
+        </main>
+
+        <footer class="site-footer">
+            <p>Situs ini di-generate secara otomatis menggunakan Python & Google Gemini.</p>
+        </footer>
+    </div>
+
+</body>
+</html>
