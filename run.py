@@ -7,7 +7,7 @@ import random
 import sys
 import os
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -18,63 +18,50 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (DENGAN UPGRADE KE SESSION & COOKIES)
+# BAGIAN 1: KELAS SCRAPER (DIUPGRADE UNTUK MENGGUNAKAN SCRAPERAPI)
 # ===================================================================
 
 class GoogleNewsScraper:
-    def __init__(self, verbose=False):
+    def __init__(self, scraperapi_key: str, verbose=False):
         self.ua = UserAgent()
         self.base_url = "https://news.google.com"
+        # ================================================================
+        # === UPGRADE UTAMA ADA DI SINI ===
+        # Kita menyimpan kunci ScraperAPI dan membuat URL targetnya.
+        # ================================================================
+        self.scraperapi_key = scraperapi_key
+        
         logging_level = logging.DEBUG if verbose else logging.INFO
         logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
-        
-        # ================================================================
-        # === UPGRADE UTAMA ADA DI SINI ===
-        # Kita menggunakan requests.Session untuk mengelola cookies dan headers
-        # di semua permintaan, meniru perilaku browser.
-        # ================================================================
-        self.session = requests.Session()
-        self._initialize_session()
-
-    def _initialize_session(self):
-        """Menetapkan headers dan cookie persetujuan awal untuk sesi."""
-        # Cookie persetujuan ini sangat penting untuk menghindari error 400 dari Google News
-        cookies = {'CONSENT': 'YES+cb.20240101-01-p0.en+FX+000'}
-        
-        headers = {
-            'User-Agent': self.ua.random,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-        self.session.headers.update(headers)
-        self.session.cookies.update(cookies)
     
     def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
+        # URL target sekarang adalah endpoint ScraperAPI, dengan URL asli kita sebagai parameter
+        encoded_url = quote(url)
+        scraperapi_url = f'http://api.scraperapi.com?api_key={self.scraperapi_key}&url={encoded_url}'
+        
         for attempt in range(max_retries):
             try:
-                self.logger.debug(f"Request attempt {attempt + 1} using session for {url}")
-                # Menggunakan self.session.get alih-alih requests.get
-                response = self.session.get(url, timeout=30, allow_redirects=True)
+                self.logger.debug(f"Request attempt {attempt + 1} via ScraperAPI for {url}")
+                # Kita tidak perlu lagi mengatur headers atau cookies, ScraperAPI yang menanganinya
+                response = requests.get(scraperapi_url, timeout=60) # Timeout lebih lama untuk layanan pihak ketiga
+                
                 if response.status_code == 200:
                     return response
-                self.logger.error(f"HTTP Error {response.status_code} for {url}")
+                
+                self.logger.error(f"ScraperAPI returned HTTP Error {response.status_code}. Response: {response.text}")
             except requests.RequestException as e:
                 self.logger.error(f"Request failed: {e}")
-            time.sleep(random.uniform(1, 3))
+            time.sleep(random.uniform(2, 5))
             
-        self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
+        self.logger.error(f"Failed to fetch {url} via ScraperAPI after {max_retries} attempts")
         return None
     
     def scrape_category(self, category_name: str, topic_id: str, max_articles: int) -> List[Dict]:
         articles = []
         seen_urls = set()
         topic_url = f"{self.base_url}/topics/{topic_id}?hl=id&gl=ID"
-        self.logger.info(f"Starting scrape for category: '{category_name}' from {topic_url}")
+        self.logger.info(f"Starting scrape for category: '{category_name}'")
         
         response = self.make_request(topic_url)
         if not response:
@@ -177,7 +164,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA (TIDAK ADA PERUBAHAN)
+# BAGIAN 3: FUNGSI UTAMA (DISESUAIKAN UNTUK MENGAMBIL SCRAPERAPI_KEY)
 # ===================================================================
 
 def main():
@@ -193,8 +180,13 @@ def main():
     if not GEMINI_API_KEY:
         logging.error("GEMINI_API_KEY environment variable is not set! Exiting.")
         sys.exit(1)
+        
+    SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY")
+    if not SCRAPERAPI_KEY:
+        logging.error("SCRAPERAPI_KEY environment variable is not set! Exiting.")
+        sys.exit(1)
 
-    scraper = GoogleNewsScraper(verbose=True)
+    scraper = GoogleNewsScraper(scraperapi_key=SCRAPERAPI_KEY, verbose=True)
     
     articles_for_template = []
     total_articles_scraped = 0
@@ -228,7 +220,7 @@ def main():
         })
 
     if total_articles_scraped == 0:
-        logging.warning("Scraping resulted in 0 articles across all categories. Generating an empty site to ensure deployment.")
+        logging.warning("Scraping resulted in 0 articles. Generating an empty site to ensure deployment.")
     
     with open(Path(output_dir) / 'data.json', 'w', encoding='utf-8') as f:
         json.dump(articles_for_template, f, indent=2, ensure_ascii=False)
