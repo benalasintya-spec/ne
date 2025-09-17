@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (DIRANCANG ULANG UNTUK GOOGLE NEWS TOPICS)
+# BAGIAN 1: KELAS SCRAPER
 # ===================================================================
 
 class GoogleNewsScraper:
@@ -30,9 +30,24 @@ class GoogleNewsScraper:
         self.logger = logging.getLogger(__name__)
         
     def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
-        headers = {'User-Agent': self.ua.random}
+        # ================================================================
+        # === PERBAIKAN PENTING ADA DI SINI ===
+        # Kita kembalikan headers yang lengkap untuk meniru browser sungguhan
+        # Ini akan menyelesaikan masalah HTTP Error 400.
+        # ================================================================
+        headers = {
+            'User-Agent': self.ua.random,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
         for attempt in range(max_retries):
             try:
+                self.logger.debug(f"Request attempt {attempt + 1} with full headers for {url}")
                 response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
                 if response.status_code == 200:
                     return response
@@ -40,6 +55,7 @@ class GoogleNewsScraper:
             except requests.RequestException as e:
                 self.logger.error(f"Request failed: {e}")
             time.sleep(random.uniform(1, 3))
+            
         self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
         return None
     
@@ -55,16 +71,14 @@ class GoogleNewsScraper:
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Cari semua elemen 'article' yang merupakan kontainer berita
-        for article_tag in soup.find_all('article', limit=max_articles * 2): # Ambil lebih banyak untuk jaga-jaga
+        for article_tag in soup.find_all('article', limit=max_articles * 2):
             if len(articles) >= max_articles:
                 break
             try:
                 link_tag = article_tag.find('a', href=True)
                 if not link_tag: continue
 
-                # URL di Google News bersifat relatif, jadi kita gabungkan
-                relative_url = link_tag['href']
+                relative_url = link_tag['href'].lstrip('.')
                 absolute_url = urljoin(self.base_url, relative_url)
 
                 if absolute_url in seen_urls: continue
@@ -94,14 +108,13 @@ class GoogleNewsScraper:
         return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER (PROMPT GEMINI DISESUAIKAN)
+# BAGIAN 2: FUNGSI-FUNGSI HELPER
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-pro')
     
-    # Prompt baru: Minta Gemini untuk mengembangkan berita berdasarkan judul
     prompt = f"""
     Anda adalah seorang jurnalis AI yang handal. Berdasarkan judul berita berikut, tuliskan sebuah ringkasan berita singkat (1-2 paragraf) yang berkualitas, unik, dan informatif. 
     Bayangkan poin-poin utama yang mungkin dibahas dalam artikel tersebut dan rangkai menjadi narasi yang koheren dan netral.
@@ -153,7 +166,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA (ALUR KERJA DISESUAIKAN)
+# BAGIAN 3: FUNGSI UTAMA
 # ===================================================================
 
 def main():
@@ -183,14 +196,12 @@ def main():
             logging.warning(f"Skipping invalid category entry: {category}")
             continue
             
-        # 1. Scrape artikel per kategori
         scraped_articles = scraper.scrape_category(category_name, topic_id, posts_per_category)
         if not scraped_articles:
             continue
         
         total_articles_scraped += len(scraped_articles)
         
-        # 2. Rewrite setiap artikel
         rewritten_articles_for_category = []
         for article in scraped_articles:
             rewritten_article = rewrite_with_gemini(article, GEMINI_API_KEY)
@@ -206,9 +217,8 @@ def main():
         })
 
     if total_articles_scraped == 0:
-        logging.warning("Scraping resulted in 0 articles across all categories. Generating an empty site.")
+        logging.warning("Scraping resulted in 0 articles across all categories. Generating an empty site to ensure deployment.")
     
-    # 3. Simpan data (opsional) dan generate situs
     with open(Path(output_dir) / 'data.json', 'w', encoding='utf-8') as f:
         json.dump(articles_for_template, f, indent=2, ensure_ascii=False)
         
