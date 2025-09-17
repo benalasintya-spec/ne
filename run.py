@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (MENGGUNAKAN PENCARIAN KATA KUNCI BIASA)
+# BAGIAN 1: KELAS SCRAPER (KEMBALI KE METODE GOOGLE SEARCH YANG STABIL)
 # ===================================================================
 
 class GoogleNewsScraper:
@@ -52,9 +52,6 @@ class GoogleNewsScraper:
         self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
         return None
     
-    # ================================================================
-    # === FUNGSI INI SEKARANG MENGGUNAKAN NAMA KATEGORI SEBAGAI KATA KUNCI ===
-    # ================================================================
     def scrape_category(self, category_name: str, max_articles: int, gl_code: str, hl_code: str) -> List[Dict]:
         articles = []
         seen_urls = set()
@@ -69,7 +66,6 @@ class GoogleNewsScraper:
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Menggunakan metode parsing yang sudah terbukti bekerja untuk google.com/search
         for link_element in soup.select('a[href^="/url?q="]'):
             if len(articles) >= max_articles:
                 break
@@ -86,7 +82,6 @@ class GoogleNewsScraper:
 
                 title = heading.get_text()
                 
-                # Mencari sumber berita (publisher)
                 parent_div = link_element.find_parent('div')
                 publisher_tag = parent_div.find('span')
                 publisher = publisher_tag.text if publisher_tag else "Unknown Source"
@@ -110,7 +105,7 @@ class GoogleNewsScraper:
         return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER (TIDAK ADA PERUBAHAN)
+# BAGIAN 2: FUNGSI-FUNGSI HELPER
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
@@ -168,7 +163,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA (DISESUAIKAN UNTUK MENGGUNAKAN KATA KUNCI)
+# BAGIAN 3: FUNGSI UTAMA
 # ===================================================================
 
 def main():
@@ -208,7 +203,6 @@ def main():
             logging.warning(f"Skipping invalid category entry: {category}")
             continue
             
-        # Panggil scraper HANYA dengan nama kategori
         scraped_articles = scraper.scrape_category(category_name, posts_per_category, gl_code, hl_code)
         if not scraped_articles:
             continue
