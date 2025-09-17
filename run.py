@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/-bin/env python3
 
 import json
 import logging
@@ -25,7 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (DIUPGRADE TOTAL DENGAN SELENIUM)
+# BAGIAN 1: KELAS SCRAPER (DENGAN PERBAIKAN COOKIE CONSENT)
 # ===================================================================
 
 class GoogleNewsScraper:
@@ -35,7 +35,6 @@ class GoogleNewsScraper:
         logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
         
-        # Pengaturan untuk menjalankan browser Chrome secara headless (tanpa GUI)
         options = webdriver.ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
@@ -44,7 +43,6 @@ class GoogleNewsScraper:
         
         self.logger.info("Initializing Selenium WebDriver...")
         try:
-            # Menginstall dan menjalankan driver Chrome secara otomatis
             self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
         except Exception as e:
             self.logger.error(f"Failed to initialize WebDriver: {e}")
@@ -64,12 +62,29 @@ class GoogleNewsScraper:
         
         try:
             self.driver.get(search_url)
+
+            # ================================================================
+            # === PERBAIKAN UTAMA ADA DI SINI ===
+            # Kita secara otomatis mencari dan mengklik tombol persetujuan cookie
+            # sebelum melanjutkan. Ini akan membuka akses ke hasil pencarian.
+            # ================================================================
+            try:
+                # Menunggu tombol "Reject all" muncul dan mengkliknya
+                reject_button = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[text()='Reject all']"))
+                )
+                reject_button.click()
+                self.logger.info("Cookie consent 'Reject all' button clicked.")
+                time.sleep(2) # Beri waktu halaman untuk memuat ulang setelah klik
+            except Exception:
+                # Jika tombol tidak ditemukan setelah 5 detik, lanjutkan saja
+                self.logger.info("Cookie consent button not found, proceeding...")
+
             # Menunggu hingga hasil pencarian benar-benar muncul di halaman
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.ID, "search"))
             )
             
-            # Mengambil HTML halaman setelah semua JavaScript selesai dijalankan
             page_html = self.driver.page_source
             soup = BeautifulSoup(page_html, 'html.parser')
             
@@ -82,9 +97,7 @@ class GoogleNewsScraper:
                 try:
                     url = unquote(link_element['href'].split('/url?q=')[1].split('&sa=U')[0])
                     if url in seen_urls: continue
-
                     title = heading.get_text()
-                    
                     parent_div = link_element.find_parent('div')
                     publisher_tag = parent_div.find('span')
                     publisher = publisher_tag.text if publisher_tag else "Unknown Source"
@@ -107,7 +120,6 @@ class GoogleNewsScraper:
         return articles[:max_articles]
     
     def close(self):
-        """Fungsi untuk menutup browser setelah selesai."""
         if self.driver:
             self.logger.info("Closing Selenium WebDriver.")
             self.driver.quit()
@@ -151,7 +163,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         logging.error(f"Error decoding JSON from '{config_file}'."); sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA
+# BAGIAN 3: FUNGSI UTAMA (DENGAN PERBAIKAN NAMEERROR)
 # ===================================================================
 
 def main():
@@ -165,7 +177,8 @@ def main():
     logging.info(f"--- Starting News Aggregator for region: {region_name} (gl={gl_code}, hl={hl_code}) ---")
     
     categories, posts_per_category, gemini_delay = config.get('categories', []), config.get('posts_per_category', 5), config.get('gemini_api_delay_seconds', 2)
-    
+    output_dir = '.'
+
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
         logging.error("GEMINI_API_KEY environment variable is not set! Exiting."); sys.exit(1)
@@ -192,11 +205,15 @@ def main():
                 
             articles_for_template.append({"name": category_name, "articles": rewritten_articles_for_category})
     finally:
-        # Memastikan browser selalu ditutup, bahkan jika terjadi error
         scraper.close()
 
     if total_articles_scraped == 0: logging.warning("Scraping resulted in 0 articles. Generating an empty site.")
     
+    # ================================================================
+    # === PERBAIKAN NAMEERROR ADA DI SINI ===
+    # Logika ini dipindahkan ke luar blok try...finally agar
+    # variabel 'output_dir' pasti terdefinisi dan dapat diakses.
+    # ================================================================
     with open(Path(output_dir) / 'data.json', 'w', encoding='utf-8') as f: json.dump(articles_for_template, f, indent=2, ensure_ascii=False)
         
     generate_static_site(articles_for_template, output_dir)
