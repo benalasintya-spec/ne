@@ -4,11 +4,10 @@ import json
 import logging
 import time
 import random
-import re
 import sys
 import os
 from datetime import datetime
-from urllib.parse import quote_plus, unquote
+from urllib.parse import urljoin
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -19,164 +18,95 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER
+# BAGIAN 1: KELAS SCRAPER (DIRANCANG ULANG UNTUK GOOGLE NEWS TOPICS)
 # ===================================================================
 
 class GoogleNewsScraper:
     def __init__(self, verbose=False):
-        self.verbose = verbose
         self.ua = UserAgent()
-        
+        self.base_url = "https://news.google.com"
         logging_level = logging.DEBUG if verbose else logging.INFO
-        logging.basicConfig(
-            level=logging_level,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
+        logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
         
-    def rotate_user_agent(self) -> str:
-        return self.ua.random
-    
     def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
-        headers = {
-            'User-Agent': self.rotate_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-        
+        headers = {'User-Agent': self.ua.random}
         for attempt in range(max_retries):
             try:
-                self.logger.debug(f"Request attempt {attempt + 1} for {url}")
-                response = requests.get(url, headers=headers, timeout=30)
-                
+                response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
                 if response.status_code == 200:
                     return response
-                elif response.status_code == 429:
-                    self.logger.warning("Rate limited. Waiting before retry...")
-                    time.sleep(2 ** attempt)
-                else:
-                    self.logger.error(f"HTTP Error {response.status_code} for {url}")
-                    
+                self.logger.error(f"HTTP Error {response.status_code} for {url}")
             except requests.RequestException as e:
                 self.logger.error(f"Request failed: {e}")
-            
             time.sleep(random.uniform(1, 3))
-        
         self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
         return None
     
-    def parse_article_date(self, date_str: str) -> Optional[str]:
-        if not date_str:
-            return None
-        return date_str
-    
-    def scrape_articles(self, keyword: str, max_articles: int = 10) -> List[Dict]:
+    def scrape_category(self, category_name: str, topic_id: str, max_articles: int) -> List[Dict]:
         articles = []
         seen_urls = set()
-        page = 0
+        topic_url = f"{self.base_url}/topics/{topic_id}?hl=id&gl=ID"
+        self.logger.info(f"Starting scrape for category: '{category_name}' from {topic_url}")
         
-        self.logger.info(f"Starting scrape for keyword: '{keyword}'")
+        response = self.make_request(topic_url)
+        if not response:
+            return []
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        while len(articles) < max_articles:
-            start = page * 10
-            search_url = f"https://www.google.com/search?q={quote_plus(keyword)}&tbm=nws&start={start}"
-            
-            self.logger.debug(f"Fetching page {page + 1} for '{keyword}'")
-            response = self.make_request(search_url)
-            
-            if not response:
-                self.logger.error(f"Failed to fetch results page {page + 1}")
+        # Cari semua elemen 'article' yang merupakan kontainer berita
+        for article_tag in soup.find_all('article', limit=max_articles * 2): # Ambil lebih banyak untuk jaga-jaga
+            if len(articles) >= max_articles:
                 break
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            found_new_article = False
-            for link_element in soup.select('a[href^="/url?q="]'):
-                if len(articles) >= max_articles:
-                    break
+            try:
+                link_tag = article_tag.find('a', href=True)
+                if not link_tag: continue
 
-                heading = link_element.find('div', role='heading')
-                if not heading:
-                    continue
+                # URL di Google News bersifat relatif, jadi kita gabungkan
+                relative_url = link_tag['href']
+                absolute_url = urljoin(self.base_url, relative_url)
 
-                try:
-                    raw_url = link_element['href']
-                    if '/url?q=' in raw_url:
-                        url = unquote(raw_url.split('/url?q=')[1].split('&sa=U')[0])
-                    else:
-                        continue
-                        
-                    if url in seen_urls:
-                        continue
+                if absolute_url in seen_urls: continue
+                
+                title_tag = article_tag.find('h4') or article_tag.find('h3')
+                title = title_tag.text if title_tag else "Judul tidak ditemukan"
+                
+                publisher_tag = article_tag.find('div', class_='gPFEn')
+                publisher = publisher_tag.text if publisher_tag else "Sumber tidak diketahui"
 
-                    title = heading.get_text()
-                    
-                    article_container = link_element.find_parent('div', class_=lambda c: c and c.startswith('SoaBEf')) or link_element.find_parent('div', class_='Gx5Zad') or link_element.find_parent('div')
-                    
-                    snippet_div = article_container.find('div', class_='n0jPhd') if article_container else None
-                    snippet = snippet_div.get_text(separator=' ', strip=True) if snippet_div else ''
+                article_data = {
+                    'category': category_name,
+                    'url': absolute_url,
+                    'title': title,
+                    'publisher': publisher,
+                    'scraped_at': datetime.now().isoformat()
+                }
+                articles.append(article_data)
+                seen_urls.add(absolute_url)
+                self.logger.debug(f"Scraped: {title[:60]}...")
 
-                    date_span = article_container.find('span', class_='OSrXXb') if article_container else None
-                    date_published = self.parse_article_date(date_span.get_text() if date_span else '')
-
-                    article_data = {
-                        'keyword': keyword,
-                        'url': url,
-                        'title': title,
-                        'date_published': date_published,
-                        'snippet': snippet,
-                        'scraped_at': datetime.now().isoformat()
-                    }
-                    
-                    articles.append(article_data)
-                    seen_urls.add(url)
-                    found_new_article = True
-                    self.logger.debug(f"Scraped article: {title[:50]}...")
-
-                except Exception as e:
-                    self.logger.warning(f"Could not parse an article element: {e}")
-                    continue
-            
-            if not found_new_article:
-                self.logger.info("No new articles found on this page. Ending scrape for this keyword.")
-                break
-            
-            page += 1
-            time.sleep(random.uniform(1, 3))
+            except Exception as e:
+                self.logger.warning(f"Could not parse an article element: {e}")
+                continue
         
-        self.logger.info(f"Finished scrape for '{keyword}'. Found {len(articles)} articles.")
-        return articles
-    
-    def save_to_json(self, articles: List[Dict], filename: str):
-        if not articles:
-            self.logger.warning("No articles to save to JSON")
-            return
-        
-        try:
-            with open(filename, 'w', encoding='utf-8') as jsonfile:
-                json.dump(articles, jsonfile, indent=2, ensure_ascii=False)
-            self.logger.info(f"Saved {len(articles)} articles to {filename}")
-        except Exception as e:
-            self.logger.error(f"Error saving to JSON: {e}")
+        self.logger.info(f"Finished scrape for '{category_name}'. Found {len(articles)} articles.")
+        return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER
+# BAGIAN 2: FUNGSI-FUNGSI HELPER (PROMPT GEMINI DISESUAIKAN)
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-pro')
     
+    # Prompt baru: Minta Gemini untuk mengembangkan berita berdasarkan judul
     prompt = f"""
-    Anda adalah seorang jurnalis. Tulis ulang konten berita berikut menjadi sebuah ringkasan yang menarik dan informatif dalam 2-3 paragraf.
-    Gaya bahasa harus netral, jelas, dan mudah dipahami. Fokus pada informasi utama yang terkandung dalam judul dan cuplikan.
+    Anda adalah seorang jurnalis AI yang handal. Berdasarkan judul berita berikut, tuliskan sebuah ringkasan berita singkat (1-2 paragraf) yang berkualitas, unik, dan informatif. 
+    Bayangkan poin-poin utama yang mungkin dibahas dalam artikel tersebut dan rangkai menjadi narasi yang koheren dan netral.
     
-    Judul Asli: "{article['title']}"
-    Cuplikan Asli: "{article['snippet']}"
+    Judul Berita: "{article['title']}"
 
     Ringkasan Berita:
     """
@@ -189,28 +119,18 @@ def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
         return article
     except Exception as e:
         logging.error(f"Failed to call Gemini API: {e}")
-        return None
+        article['rewritten_content'] = "Konten tidak dapat dibuat saat ini."
+        return article
 
-def generate_static_site(articles: List[Dict], output_dir: str):
-    if not articles and not Path(output_dir, 'index.html').exists():
-         # Jika tidak ada artikel dan index.html belum ada, buat file kosong
-         # untuk mencegah 404 pada deployment pertama kali.
-        logging.warning("No articles found, creating an empty index.html for initial deployment.")
-        Path(output_dir, 'index.html').touch()
-        return
-    elif not articles:
-        # Jika tidak ada artikel tapi index.html sudah ada, tidak perlu melakukan apa-apa.
-        logging.warning("No new articles found, existing index.html will be kept.")
-        return
-
+def generate_static_site(articles_by_category: List[Dict], output_dir: str):
     try:
         logging.info("Generating static site file...")
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template('template.html')
         
         html_content = template.render(
-            articles=articles,
-            generated_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+            articles_by_category=articles_by_category,
+            generated_at=datetime.now().strftime('%d %B %Y, %H:%M:%S UTC')
         )
         
         output_path = Path(output_dir) / "index.html"
@@ -233,23 +153,17 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA
+# BAGIAN 3: FUNGSI UTAMA (ALUR KERJA DISESUAIKAN)
 # ===================================================================
 
 def main():
-    """Fungsi utama yang menjalankan seluruh proses secara otomatis."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     config = load_config()
-    keywords = config.get('keywords', [])
-    max_articles_per_keyword = config.get('max_articles_per_keyword', 5)
-    # <-- BARU: Baca konfigurasi jeda, default 2 detik jika tidak ada di config
+    categories = config.get('categories', [])
+    posts_per_category = config.get('posts_per_category', 5)
     gemini_delay = config.get('gemini_api_delay_seconds', 2)
     output_dir = '.'
-
-    if not keywords:
-        logging.error("No keywords found in config.json. Exiting.")
-        sys.exit(1)
 
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
@@ -257,33 +171,50 @@ def main():
         sys.exit(1)
 
     scraper = GoogleNewsScraper(verbose=True)
-
-    all_articles_raw = []
-    for keyword in keywords:
-        articles = scraper.scrape_articles(keyword, max_articles=max_articles_per_keyword)
-        all_articles_raw.extend(articles)
     
-    if not all_articles_raw:
-        logging.warning("Scraping resulted in 0 articles. No content to process or deploy. Exiting.")
-        generate_static_site([], output_dir)
-        return
+    articles_for_template = []
+    total_articles_scraped = 0
 
-    rewritten_articles = []
-    for article in all_articles_raw:
-        rewritten_article = rewrite_with_gemini(article, GEMINI_API_KEY)
-        if rewritten_article:
-            rewritten_articles.append(rewritten_article)
+    for category in categories:
+        category_name = category.get('name')
+        topic_id = category.get('topic_id')
         
-        # <-- DIUBAH: Gunakan jeda dari konfigurasi
-        logging.info(f"Waiting for {gemini_delay} seconds before next API call...")
-        time.sleep(gemini_delay)
+        if not category_name or not topic_id:
+            logging.warning(f"Skipping invalid category entry: {category}")
+            continue
+            
+        # 1. Scrape artikel per kategori
+        scraped_articles = scraper.scrape_category(category_name, topic_id, posts_per_category)
+        if not scraped_articles:
+            continue
+        
+        total_articles_scraped += len(scraped_articles)
+        
+        # 2. Rewrite setiap artikel
+        rewritten_articles_for_category = []
+        for article in scraped_articles:
+            rewritten_article = rewrite_with_gemini(article, GEMINI_API_KEY)
+            if rewritten_article:
+                rewritten_articles_for_category.append(rewritten_article)
+            
+            logging.info(f"Waiting for {gemini_delay} seconds...")
+            time.sleep(gemini_delay)
+            
+        articles_for_template.append({
+            "name": category_name,
+            "articles": rewritten_articles_for_category
+        })
 
-    json_file = Path(output_dir) / "data.json"
-    scraper.save_to_json(rewritten_articles, str(json_file))
+    if total_articles_scraped == 0:
+        logging.warning("Scraping resulted in 0 articles across all categories. Generating an empty site.")
+    
+    # 3. Simpan data (opsional) dan generate situs
+    with open(Path(output_dir) / 'data.json', 'w', encoding='utf-8') as f:
+        json.dump(articles_for_template, f, indent=2, ensure_ascii=False)
+        
+    generate_static_site(articles_for_template, output_dir)
 
-    generate_static_site(rewritten_articles, output_dir)
-
-    logging.info("Process finished successfully. data.json and index.html have been updated.")
+    logging.info("Process finished successfully.")
 
 if __name__ == "__main__":
     main()
