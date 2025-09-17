@@ -5,30 +5,14 @@
     "hl": "en"
   },
   "categories": [
-    {
-      "name": "Technology",
-      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0JXVnVMVWRDR2dKAlRp"
-    },
-    {
-      "name": "Business",
-      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0JXVnVMVWRDR2dKAlRp"
-    },
-    {
-      "name": "Entertainment",
-      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5NU0JXVnVMVWRDR2dKAlRp"
-    },
-    {
-      "name": "Sports",
-      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0JXVnVMVWRDR2dKAlRp"
-    },
-    {
-      "name": "Science",
-      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0JXVnVMVWRDR2dKAlRp"
-    },
-    {
-        "name": "Health",
-        "topic_id": "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwYkZSb0VnSmxiaWdBUAE"
-    }
+    { "name": "US News" },
+    { "name": "World News" },
+    { "name": "Business" },
+    { "name": "Technology" },
+    { "name": "Entertainment" },
+    { "name": "Sports" },
+    { "name": "Science" },
+    { "name": "Health" }
   ],
   "posts_per_category": 5,
   "gemini_api_delay_seconds": 2
