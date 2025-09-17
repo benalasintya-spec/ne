@@ -4,5 +4,4 @@ markdown
 jinja2
 schedule
 google-generativeai
-selenium
-webdriver-manager
+playwright
