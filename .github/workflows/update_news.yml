@@ -16,6 +16,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ================================================================
+      # === PERUBAHAN PENTING ADA DI SINI ===
+      # Langkah baru untuk menginstall Google Chrome di server runner
+      # ================================================================
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -35,14 +44,6 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # ================================================================
-          # === PERBAIKAN PENTING ADA DI SINI ===
-          # Lakukan 'pull' untuk menyinkronkan dengan remote sebelum push
-          # Ini akan menyelesaikan masalah '[rejected] main -> main'.
-          # ================================================================
-          git pull
-          
           git add .
           if ! git diff --staged --quiet; then
             git commit -m "Berita Otomatis: Update konten pada $(date -u)"
