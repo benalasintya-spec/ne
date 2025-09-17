@@ -1,11 +1,30 @@
 {
-  "keywords": [
-    "kecerdasan buatan generatif",
-    "startup teknologi indonesia",
-    "perkembangan kendaraan listrik",
-    "ekonomi digital asia tenggara",
-    "penemuan sains terbaru"
+  "categories": [
+    {
+      "name": "Teknologi",
+      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0JXVnVMVWRDR2dKAlRp"
+    },
+    {
+      "name": "Bisnis",
+      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0JXVnVMVWRDR2dKAlRp"
+    },
+    {
+      "name": "Hiburan",
+      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5NU0JXVnVMVWRDR2dKAlRp"
+    },
+    {
+      "name": "Olahraga",
+      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp1ZEdvU0JXVnVMVWRDR2dKAlRp"
+    },
+    {
+      "name": "Sains",
+      "topic_id": "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0JXVnVMVWRDR2dKAlRp"
+    },
+    {
+        "name": "Kesehatan",
+        "topic_id": "CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwYkZSb0VnSmxiaWdBUAE"
+    }
   ],
-  "max_articles_per_keyword": 3,
-  "gemini_api_delay_seconds": 5
+  "posts_per_category": 5,
+  "gemini_api_delay_seconds": 2
 }
