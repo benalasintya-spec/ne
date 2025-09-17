@@ -3,17 +3,24 @@ name: Update Berita Otomatis
 # Pemicu (Trigger)
 on:
   # 1. Berjalan otomatis setiap 6 jam.
-  #    Anda bisa mengubah jadwalnya. '0 */6 * * *' berarti pada menit ke-0, setiap 6 jam.
   schedule:
     - cron: '0 */6 * * *'
 
   # 2. Memungkinkan Anda menjalankan workflow ini secara manual dari tab Actions di GitHub
-  #    Ini sangat berguna untuk testing.
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    # ================================================================
+    # === PERUBAHAN PENTING ADA DI SINI ===
+    # Memberikan izin kepada workflow untuk melakukan 'git push'.
+    # Tanpa ini, akan terjadi error 403 (Permission Denied).
+    permissions:
+      contents: write
+    # ================================================================
+
     steps:
       # Langkah 1: Mengunduh kode dari repositori Anda ke server virtual GitHub
       - name: Checkout repository
@@ -32,7 +39,6 @@ jobs:
           pip install -r requirements.txt
 
       # Langkah 4: Menjalankan skrip Python utama kita
-      #    Perhatikan bagaimana kita menggunakan 'secrets.GEMINI_API_KEY' dengan aman
       - name: Run Python script to generate site
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
