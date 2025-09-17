@@ -1,4 +1,4 @@
-#!/usr.bin/env python3
+#!/usr/bin/env python3
 
 import json
 import logging
@@ -7,7 +7,7 @@ import random
 import sys
 import os
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import quote_plus, unquote
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -18,91 +18,88 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER
+# BAGIAN 1: KELAS SCRAPER (MENGGUNAKAN PENCARIAN KATA KUNCI BIASA)
 # ===================================================================
 
 class GoogleNewsScraper:
     def __init__(self, verbose=False):
         self.ua = UserAgent()
-        self.base_url = "https://news.google.com"
+        self.base_search_url = "https://www.google.com/search"
         logging_level = logging.DEBUG if verbose else logging.INFO
         logging.basicConfig(level=logging_level, format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
-        self.session = requests.Session()
     
-    def _initialize_session(self, hl_code: str):
-        cookies = {'CONSENT': 'YES+cb.20240101-01-p0.en+FX+000'}
-        
+    def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
         headers = {
             'User-Agent': self.ua.random,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': f'{hl_code.lower()}-{hl_code.upper()},{hl_code.lower()};q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
-        self.session.headers.update(headers)
-        self.session.cookies.update(cookies)
-    
-    def make_request(self, url: str, max_retries: int = 3) -> Optional[requests.Response]:
         for attempt in range(max_retries):
-            # ================================================================
-            # === KESALAHAN ADA DI BARIS INI, SEKARANG SUDAH DIPERBAIKI ===
             try:
-            # ================================================================
-                self.logger.debug(f"Request attempt {attempt + 1} using session for {url}")
-                response = self.session.get(url, timeout=30, allow_redirects=True)
+                self.logger.debug(f"Request attempt {attempt + 1} for {url}")
+                response = requests.get(url, headers=headers, timeout=30)
                 if response.status_code == 200:
                     return response
                 self.logger.error(f"HTTP Error {response.status_code} for {url}")
             except requests.RequestException as e:
                 self.logger.error(f"Request failed: {e}")
             time.sleep(random.uniform(1, 3))
-            
         self.logger.error(f"Failed to fetch {url} after {max_retries} attempts")
         return None
     
-    def scrape_category(self, category_name: str, topic_id: str, max_articles: int, gl_code: str, hl_code: str) -> List[Dict]:
+    # ================================================================
+    # === FUNGSI INI SEKARANG MENGGUNAKAN NAMA KATEGORI SEBAGAI KATA KUNCI ===
+    # ================================================================
+    def scrape_category(self, category_name: str, max_articles: int, gl_code: str, hl_code: str) -> List[Dict]:
         articles = []
         seen_urls = set()
-        topic_url = f"{self.base_url}/topics/{topic_id}?hl={hl_code}&gl={gl_code}"
         
-        self.logger.info(f"Starting scrape for category: '{category_name}' from {topic_url}")
+        search_url = f"{self.base_search_url}?q={quote_plus(category_name)}&tbm=nws&gl={gl_code}&hl={hl_code}"
         
-        response = self.make_request(topic_url)
+        self.logger.info(f"Starting keyword search for category: '{category_name}'")
+        
+        response = self.make_request(search_url)
         if not response:
             return []
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        for article_tag in soup.find_all('article', limit=max_articles * 2):
+        # Menggunakan metode parsing yang sudah terbukti bekerja untuk google.com/search
+        for link_element in soup.select('a[href^="/url?q="]'):
             if len(articles) >= max_articles:
                 break
+
+            heading = link_element.find('div', role='heading')
+            if not heading:
+                continue
+
             try:
-                link_tag = article_tag.find('a', href=True)
-                if not link_tag: continue
-
-                relative_url = link_tag['href'].lstrip('.')
-                absolute_url = urljoin(self.base_url, relative_url)
-
-                if absolute_url in seen_urls: continue
+                raw_url = link_element['href']
+                url = unquote(raw_url.split('/url?q=')[1].split('&sa=U')[0])
                 
-                title_tag = article_tag.find('h4') or article_tag.find('h3')
-                title = title_tag.text if title_tag else "Judul tidak ditemukan"
-                
-                publisher_tag = article_tag.find('div', class_='gPFEn')
-                publisher = publisher_tag.text if publisher_tag else "Sumber tidak diketahui"
+                if url in seen_urls: continue
 
+                title = heading.get_text()
+                
+                # Mencari sumber berita (publisher)
+                parent_div = link_element.find_parent('div')
+                publisher_tag = parent_div.find('span')
+                publisher = publisher_tag.text if publisher_tag else "Unknown Source"
+                
                 article_data = {
                     'category': category_name,
-                    'url': absolute_url,
+                    'url': url,
                     'title': title,
                     'publisher': publisher,
                     'scraped_at': datetime.now().isoformat()
                 }
                 articles.append(article_data)
-                seen_urls.add(absolute_url)
+                seen_urls.add(url)
                 self.logger.debug(f"Scraped: {title[:60]}...")
 
             except Exception as e:
@@ -113,7 +110,7 @@ class GoogleNewsScraper:
         return articles[:max_articles]
 
 # ===================================================================
-# BAGIAN 2: FUNGSI-FUNGSI HELPER
+# BAGIAN 2: FUNGSI-FUNGSI HELPER (TIDAK ADA PERUBAHAN)
 # ===================================================================
 
 def rewrite_with_gemini(article: Dict, api_key: str) -> Optional[Dict]:
@@ -171,7 +168,7 @@ def load_config(config_file: str = 'config.json') -> Dict:
         sys.exit(1)
 
 # ===================================================================
-# BAGIAN 3: FUNGSI UTAMA
+# BAGIAN 3: FUNGSI UTAMA (DISESUAIKAN UNTUK MENGGUNAKAN KATA KUNCI)
 # ===================================================================
 
 def main():
@@ -201,20 +198,18 @@ def main():
         sys.exit(1)
 
     scraper = GoogleNewsScraper(verbose=True)
-    scraper._initialize_session(hl_code=hl_code)
     
     articles_for_template = []
     total_articles_scraped = 0
 
     for category in categories:
         category_name = category.get('name')
-        topic_id = category.get('topic_id')
-        
-        if not category_name or not topic_id:
+        if not category_name:
             logging.warning(f"Skipping invalid category entry: {category}")
             continue
             
-        scraped_articles = scraper.scrape_category(category_name, topic_id, posts_per_category, gl_code, hl_code)
+        # Panggil scraper HANYA dengan nama kategori
+        scraped_articles = scraper.scrape_category(category_name, posts_per_category, gl_code, hl_code)
         if not scraped_articles:
             continue
         
