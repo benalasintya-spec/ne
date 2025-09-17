@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader
 import google.generativeai as genai
 
 # ===================================================================
-# BAGIAN 1: KELAS SCRAPER (KEMBALI KE METODE GOOGLE SEARCH YANG STABIL)
+# BAGIAN 1: KELAS SCRAPER (MENGGUNAKAN PENCARIAN KATA KUNCI BIASA)
 # ===================================================================
 
 class GoogleNewsScraper:
