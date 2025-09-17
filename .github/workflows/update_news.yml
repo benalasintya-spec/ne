@@ -1,56 +1,48 @@
 name: Update Berita Otomatis
 
-# Pemicu (Trigger)
 on:
-  # 1. Berjalan otomatis setiap 6 jam.
   schedule:
+    # ===================================================================
+    # PENGATURAN WAKTU SCRAP ULANG ADA DI SINI
+    # '0 */6 * * *' artinya berjalan setiap 6 jam.
+    # Ubah menjadi '0 * * * *' untuk berjalan setiap jam.
+    # Ubah menjadi '0 0 * * *' untuk berjalan sekali sehari pada tengah malam UTC.
+    # ===================================================================
     - cron: '0 */6 * * *'
 
-  # 2. Memungkinkan Anda menjalankan workflow ini secara manual dari tab Actions di GitHub
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
-    # ================================================================
-    # === PERUBAHAN PENTING ADA DI SINI ===
-    # Memberikan izin kepada workflow untuk melakukan 'git push'.
-    # Tanpa ini, akan terjadi error 403 (Permission Denied).
+    
     permissions:
       contents: write
-    # ================================================================
-
+      
     steps:
-      # Langkah 1: Mengunduh kode dari repositori Anda ke server virtual GitHub
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Langkah 2: Menyiapkan lingkungan Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # Langkah 3: Menginstall semua library yang tercantum di requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Langkah 4: Menjalankan skrip Python utama kita
       - name: Run Python script to generate site
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python run.py
 
-      # Langkah 5: Menyimpan file-file baru (index.html, data.json) kembali ke repositori
       - name: Commit and push if there are changes
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .
-          # Hanya commit dan push jika benar-benar ada perubahan file
           if ! git diff --staged --quiet; then
             git commit -m "Berita Otomatis: Update konten pada $(date -u)"
             git push
